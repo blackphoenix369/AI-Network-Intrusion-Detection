@@ -1,0 +1,18 @@
+# Virtual environment
+venv/
+nids_env/
+
+# Compiled binaries
+*.exe
+
+# Generated files
+nids_model.pkl
+traffic_data.csv
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
