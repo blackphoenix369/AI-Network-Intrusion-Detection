@@ -7,21 +7,37 @@ df = pd.read_csv("traffic_data.csv")
 
 df["syn_flag"] = df["tcp_flags"].str.contains("SYN").astype(int)
 
-# ML Prediction
-df["ml_prediction"] = model.predict(df[["packet_len", "syn_flag"]])
+# Flow aggregation
+flows = df.groupby("src_ip").agg(
+    syn_count=("syn_flag", "sum"),
+    packet_count=("packet_len", "count"),
+    avg_packet_size=("packet_len", "mean")
+).reset_index()
 
-# Rule-based detection
-def apply_rules(row):
-    if row["syn_flag"] == 1 and row["packet_len"] < 100:
+# ML prediction
+flows["ml_alert"] = model.predict(
+    flows[["syn_count", "packet_count", "avg_packet_size"]]
+)
+
+# Rule engine
+def rule_engine(row):
+    if row.syn_count > 100:
         return "SYN_FLOOD"
     return "NORMAL"
 
-df["rule_alert"] = df.apply(apply_rules, axis=1)
+flows["rule_alert"] = flows.apply(rule_engine, axis=1)
 
-df["final_label"] = df.apply(
-    lambda r: "ATTACK" if r["rule_alert"] != "NORMAL" or r["ml_prediction"] == 1 else "NORMAL",
+flows["final_alert"] = flows.apply(
+    lambda r: "ATTACK" if r.rule_alert != "NORMAL" or r.ml_alert == 1 else "NORMAL",
     axis=1
 )
 
+# Merge back to packets
+df = df.merge(
+    flows[["src_ip", "final_alert"]],
+    on="src_ip",
+    how="left"
+)
+
 df.to_csv("traffic_data.csv", index=False)
-print("✅ Detection completed")
+print("✅ Hybrid detection completed")
