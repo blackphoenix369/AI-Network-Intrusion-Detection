@@ -1,24 +1,31 @@
 import streamlit as st
 import pandas as pd
-import joblib
+import time
 
-st.set_page_config(page_title="AI-Based NIDS", layout="wide")
-
+st.set_page_config(layout="wide")
 st.title("🛡️ AI-Based Network Intrusion Detection System")
 
-# Load model & data
-model = joblib.load("nids_model.pkl")
-df = pd.read_csv("traffic_data.csv")
+placeholder = st.empty()
 
-st.subheader("📄 Network Traffic Dataset")
-st.dataframe(df.head())
+while True:
+    try:
+        df = pd.read_csv("traffic_data.csv")
+        df = df.tail(100).iloc[::-1]
 
-if st.button("🔍 Run Intrusion Detection"):
-    predictions = model.predict(df)
-    df["Status"] = ["Intrusion" if p == 1 else "Normal" for p in predictions]
+        def highlight(row):
+            return ["background-color: #ffcccc" if row.final_label == "ATTACK" else "" for _ in row]
 
-    st.subheader("🚦 Detection Results")
-    st.dataframe(df[["packet_size", "packet_rate", "Status"]])
+        with placeholder.container():
+            st.subheader("📡 Live Packet Monitoring")
+            st.dataframe(df.style.apply(highlight, axis=1), height=500)
 
-    intrusion_count = df["Status"].value_counts().get("Intrusion", 0)
-    st.metric("🚨 Intrusions Detected", intrusion_count)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Packets", len(df))
+            c2.metric("Attacks", len(df[df.final_label == "ATTACK"]))
+            c3.metric("Unique Sources", df.src_ip.nunique())
+
+    except:
+        st.warning("Waiting for traffic...")
+
+    time.sleep(2)
+    st.rerun()

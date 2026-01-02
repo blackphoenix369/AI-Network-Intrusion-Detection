@@ -1,34 +1,62 @@
+#include <pcap.h>
 #include <iostream>
 #include <fstream>
-#include <cstdlib>
 #include <ctime>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
 
-using namespace std;
+std::ofstream csv("traffic_data.csv", std::ios::app);
+
+void write_header() {
+    csv << "timestamp,src_ip,dst_ip,src_port,dst_port,protocol,packet_len,tcp_flags\n";
+}
+
+void packet_handler(u_char *, const struct pcap_pkthdr *header, const u_char *packet) {
+    struct ip *ip_hdr = (struct ip *)(packet + 14);
+
+    if (ip_hdr->ip_p != IPPROTO_TCP) return;
+
+    struct tcphdr *tcp_hdr = (struct tcphdr *)(packet + 14 + ip_hdr->ip_hl * 4);
+
+    char timebuf[64];
+    std::time_t now = std::time(nullptr);
+    std::strftime(timebuf, sizeof(timebuf), "%H:%M:%S", std::localtime(&now));
+
+    csv << timebuf << ","
+        << inet_ntoa(ip_hdr->ip_src) << ","
+        << inet_ntoa(ip_hdr->ip_dst) << ","
+        << ntohs(tcp_hdr->th_sport) << ","
+        << ntohs(tcp_hdr->th_dport) << ","
+        << "TCP" << ","
+        << header->len << ",";
+
+    if (tcp_hdr->th_flags & TH_SYN) csv << "SYN";
+    if (tcp_hdr->th_flags & TH_ACK) csv << "ACK";
+    if (tcp_hdr->th_flags & TH_FIN) csv << "FIN";
+
+    csv << "\n";
+    csv.flush();
+}
 
 int main() {
-    ofstream file("traffic_data.csv");
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_if_t *devices;
 
-    file << "packet_size,flow_duration,protocol_type,src_bytes,dst_bytes,packet_rate\n";
-
-    srand(time(0));
-
-    for (int i = 0; i < 200; i++) {
-        int packet_size = rand() % 1460 + 40;
-        int flow_duration = rand() % 10000 + 1;
-        int protocol_type = rand() % 3;  // 0-TCP, 1-UDP, 2-ICMP
-        int src_bytes = rand() % 5000;
-        int dst_bytes = rand() % 5000;
-        float packet_rate = (rand() % 1000) / 10.0;
-
-        file << packet_size << ","
-             << flow_duration << ","
-             << protocol_type << ","
-             << src_bytes << ","
-             << dst_bytes << ","
-             << packet_rate << "\n";
+    if (pcap_findalldevs(&devices, errbuf) == -1) {
+        std::cerr << errbuf << std::endl;
+        return 1;
     }
 
-    file.close();
-    cout << "[+] traffic_data.csv generated successfully\n";
+    pcap_t *handle = pcap_open_live(devices->name, BUFSIZ, 1, 1000, errbuf);
+    if (!handle) {
+        std::cerr << errbuf << std::endl;
+        return 1;
+    }
+
+    write_header();
+    pcap_loop(handle, 0, packet_handler, nullptr);
+
+    pcap_close(handle);
     return 0;
 }
